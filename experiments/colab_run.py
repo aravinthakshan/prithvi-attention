@@ -14,7 +14,7 @@ Or in a notebook cell:
 
 DATASET    = "firescars"      # "firescars"  |  "burnintensity"
 ATTN_TYPE  = "none"           # "none" (baseline)  |  "limix"  |  "mitra"
-DATA_PCT   = 20.0             # % of training data: 10 | 20 | 50 | 100
+DATA_PCT   = 5.0             # % of training data: 10 | 20 | 50 | 100
 BACKBONE   = "prithvi_eo_v2_300"  # "prithvi_eo_v2_300" | "prithvi_eo_v2_300_tl"
                               # | "prithvi_eo_v2_600" | "prithvi_eo_v2_600_tl"
 
