@@ -45,7 +45,7 @@ import torch
 import torch.nn as nn
 import lightning.pytorch as pl
 from lightning.pytorch.callbacks import (
-    EarlyStopping, LearningRateMonitor, ModelCheckpoint, RichProgressBar,
+    EarlyStopping, LearningRateMonitor, ModelCheckpoint,
 )
 from lightning.pytorch.loggers import TensorBoardLogger
 
@@ -216,10 +216,14 @@ def wrap_patch_embed(patch_embed, channel_attn):
 
 
 class MetricsPrinter(pl.Callback):
+    def on_train_epoch_start(self, trainer, pl_module):
+        print(f"[epoch {trainer.current_epoch + 1}/{trainer.max_epochs}] training...", flush=True)
+
     def on_validation_epoch_end(self, trainer, pl_module):
-        m = {k: f"{v:.4f}" for k, v in trainer.callback_metrics.items()}
-        print(f"\n[epoch {trainer.current_epoch}] " +
-              "  |  ".join(f"{k}={v}" for k, v in sorted(m.items())))
+        m = {k: f"{v:.4f}" for k, v in trainer.callback_metrics.items()
+             if not k.startswith("train/")}
+        print(f"[epoch {trainer.current_epoch + 1}/{trainer.max_epochs}] " +
+              "  |  ".join(f"{k}={v}" for k, v in sorted(m.items())), flush=True)
 
 
 # ---- main ----
@@ -398,7 +402,6 @@ def run():
     # 5. Trainer
     logger = TensorBoardLogger(save_dir=out_dir, name="tb")
     callbacks = [
-        RichProgressBar(),
         LearningRateMonitor(logging_interval="epoch"),
         ModelCheckpoint(
             dirpath=os.path.join(out_dir, "ckpts"),
@@ -421,6 +424,8 @@ def run():
         log_every_n_steps=5,
         check_val_every_n_epoch=2,
         default_root_dir=out_dir,
+        enable_progress_bar=False,   # no progress bar
+        enable_model_summary=False,  # no model summary table
     )
 
     # 6. Optimizer — patch task after construction
