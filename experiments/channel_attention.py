@@ -272,19 +272,22 @@ class OrionBiAxialChannelAttention(nn.Module):
 
         # 2. Grouped: split channels into groups, attend within each
         cpg = self.C // self.num_groups  # channels per group
-        x_g = x_ch[:, :cpg * self.num_groups, :].view(
-            B * N * self.num_groups, cpg, self.slot_dim
-        )
+        used = cpg * self.num_groups
+        x_g = x_ch[:, :used, :].view(B * N * self.num_groups, cpg, self.slot_dim)
         x_g = self.grouped_attn(self.group_norm(self.group_proj(x_g)))
-        x_ch[:, :cpg * self.num_groups, :] = x_g.view(B * N, cpg * self.num_groups, self.slot_dim)
+        x_g = x_g.view(B * N, used, self.slot_dim)
+        if used < self.C:
+            x_ch = torch.cat([x_g, x_ch[:, used:, :]], dim=1)
+        else:
+            x_ch = x_g
 
         # 3. Hierarchical: first half <-> second half cross-attend
         mid = self.C // 2
         first = self.hier_norm(self.hier_proj(x_ch[:, :mid, :]))
         second = self.hier_norm(self.hier_proj(x_ch[:, mid:, :]))
-        first = self.hier_attn(first, second, second)
-        second = self.hier_attn(second, first, first)
-        x_ch = torch.cat([first, second], dim=1)
+        first_out = self.hier_attn(first, second, second)
+        second_out = self.hier_attn(second, first, first)
+        x_ch = torch.cat([first_out, second_out], dim=1)
 
         # 4. Relational: project then self-attend
         x_ch = self.rel_attn(self.rel_norm(self.rel_proj(x_ch)))
