@@ -447,23 +447,27 @@ def run_all():
                 metrics.update(d)
             all_results[attn] = metrics
         except Exception as e:
-            print(f"\n[ERROR] {attn} failed: {e}\n")
+            import traceback
+            print(f"\n[ERROR] {attn} failed: {e}")
+            traceback.print_exc()
             all_results[attn] = {"error": str(e)}
+
+        # Free GPU memory between runs
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
 
     # Print comparison table
     print(f"\n{'='*60}")
-    print(f"  RESULTS COMPARISON — {DATASET} @ {DATA_PCT}% data")
+    print(f"  RESULTS — {DATASET} @ {DATA_PCT}% data, {MAX_EPOCHS} epochs")
     print(f"{'='*60}")
     print(f"{'Attention':<12} {'mIoU':>10} {'Val Loss':>10} {'Attn Params':>12}")
-    print(f"{'-'*46}")
+    print(f"{'-'*50}")
     for attn in ["none", "limix", "mitra"]:
         m = all_results.get(attn, {})
         if "error" in m:
-            print(f"{attn:<12} {'FAILED':>10}")
+            print(f"{attn:<12} {'FAILED':>10}   ({m['error'][:40]})")
             continue
         iou = m.get("val/Multiclass_Jaccard_Index", 0)
         loss = m.get("val/loss", 0)
-        # read attn params from results file
         exp_name = f"{DATASET}__{BACKBONE}__{attn}__pct{int(DATA_PCT)}"
         rfile = os.path.join(OUTPUT_DIR, exp_name, "results.txt")
         ap = "0"
