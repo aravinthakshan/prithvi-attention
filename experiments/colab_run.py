@@ -233,33 +233,59 @@ class MetricsPrinter(pl.Callback):
     def __init__(self):
         super().__init__()
         self._epoch_start = None
+        self._batch_start = None
+
+    def _ts(self):
+        from datetime import datetime
+        return datetime.now().strftime('%H:%M:%S')
 
     def on_train_start(self, trainer, pl_module):
-        from datetime import datetime
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Training started.", flush=True)
+        print(f"[{self._ts()}] trainer.fit started — optimizer initializing...", flush=True)
 
     def on_train_epoch_start(self, trainer, pl_module):
         import time
-        from datetime import datetime
         self._epoch_start = time.time()
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] epoch {trainer.current_epoch + 1}/{trainer.max_epochs} — training...", flush=True)
+        print(f"[{self._ts()}] epoch {trainer.current_epoch + 1}/{trainer.max_epochs} started", flush=True)
+
+    def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
+        import time
+        self._batch_start = time.time()
+        if batch_idx == 0:
+            # Show shape of first batch so we know data is flowing
+            img = batch.get("image", batch.get("pixels", None))
+            lbl = batch.get("mask", batch.get("label", None))
+            img_shape = tuple(img.shape) if img is not None else "?"
+            lbl_shape = tuple(lbl.shape) if lbl is not None else "?"
+            print(f"[{self._ts()}]   batch 0 — image{img_shape} label{lbl_shape}", flush=True)
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        import time
+        if batch_idx == 0:
+            elapsed = time.time() - self._batch_start if self._batch_start else 0
+            loss = outputs.get("loss", None) if isinstance(outputs, dict) else outputs
+            loss_str = f"{loss:.4f}" if isinstance(loss, float) else (
+                f"{loss.item():.4f}" if hasattr(loss, 'item') else str(loss))
+            print(f"[{self._ts()}]   batch 0 done ({elapsed:.1f}s) — loss={loss_str}", flush=True)
 
     def on_train_epoch_end(self, trainer, pl_module):
         import time
-        from datetime import datetime
         elapsed = time.time() - self._epoch_start if self._epoch_start else 0
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] epoch {trainer.current_epoch + 1}/{trainer.max_epochs} — train done ({elapsed:.1f}s)", flush=True)
+        loss = trainer.callback_metrics.get("train/loss", "?")
+        loss_str = f"{loss:.4f}" if isinstance(loss, torch.Tensor) else str(loss)
+        print(f"[{self._ts()}] epoch {trainer.current_epoch + 1}/{trainer.max_epochs} done "
+              f"({elapsed:.1f}s) — train/loss={loss_str}", flush=True)
+
+    def on_validation_epoch_start(self, trainer, pl_module):
+        print(f"[{self._ts()}] validating...", flush=True)
 
     def on_validation_epoch_end(self, trainer, pl_module):
-        from datetime import datetime
         m = {k: f"{v:.4f}" for k, v in trainer.callback_metrics.items()
              if not k.startswith("train/")}
         metrics_str = "  |  ".join(f"{k}={v}" for k, v in sorted(m.items()))
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] epoch {trainer.current_epoch + 1}/{trainer.max_epochs} — {metrics_str}", flush=True)
+        print(f"[{self._ts()}] val — {metrics_str}", flush=True)
 
     def on_train_end(self, trainer, pl_module):
-        from datetime import datetime
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Training complete.", flush=True)
+        print(f"[{self._ts()}] Training complete.", flush=True)
 
 
 # ---- main ----
@@ -336,6 +362,8 @@ def run():
                 p.requires_grad_(False)
         print("Backbone frozen.")
 
+    from datetime import datetime
+
     task_kwargs = dict(
         model_args=model_args,
         model_factory="EncoderDecoderFactory",
@@ -344,11 +372,17 @@ def run():
         freeze_backbone=FREEZE_BACKBONE,
         freeze_decoder=False,
         model=model,
+        optimizer="adamw",
+        optimizer_hparams={"lr": lr, "weight_decay": 0.05},
+        scheduler="CosineAnnealingLR",
+        scheduler_hparams={"T_max": MAX_EPOCHS},
     )
     if "class_weights" in cfg:
         task_kwargs["class_weights"] = cfg["class_weights"]
 
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Building Lightning task...", flush=True)
     task = SemanticSegmentationTask(**task_kwargs)
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Task ready.", flush=True)
 
     # 4. DataModule
     import albumentations as A
@@ -401,8 +435,9 @@ def run():
             ]),
         )
 
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Setting up datamodule...", flush=True)
     dm.setup("fit")
-
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Datamodule ready.", flush=True)
     print(f"[data] Train samples available: {len(dm.train_dataset)}")
 
     if DATA_PCT < 100.0:
@@ -441,7 +476,7 @@ def run():
         LearningRateMonitor(logging_interval="epoch"),
         ModelCheckpoint(
             dirpath=os.path.join(out_dir, "ckpts"),
-            filename="{epoch:02d}_{val_mIoU:.4f}",
+            filename="epoch{epoch:02d}",
             monitor=cfg["monitor"],
             mode=cfg["monitor_mode"],
             save_top_k=1,
@@ -462,20 +497,8 @@ def run():
         default_root_dir=out_dir,
         enable_progress_bar=False,
         enable_model_summary=False,
-        num_sanity_val_steps=0,      # skip silent sanity check at start
+        num_sanity_val_steps=0,
     )
-
-    # 6. Optimizer — patch task after construction
-    def configure_optimizers(self_task):
-        opt = torch.optim.AdamW(
-            filter(lambda p: p.requires_grad, self_task.model.parameters()),
-            lr=lr, weight_decay=0.05,
-        )
-        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=MAX_EPOCHS)
-        return {"optimizer": opt, "lr_scheduler": {"scheduler": sched, "interval": "epoch"}}
-
-    import types
-    task.configure_optimizers = types.MethodType(configure_optimizers, task)
 
     # 7. Fit
     from datetime import datetime
