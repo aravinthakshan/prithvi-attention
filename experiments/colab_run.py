@@ -336,15 +336,23 @@ def run():
     print(f"[{ts()}] Batch loaded — image: {batch['image'].shape}, mask: {batch['mask'].shape}", flush=True)
 
     print(f"[{ts()}] Sanity check: forward pass...", flush=True)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
     model.eval()
     with torch.no_grad():
-        out = model(batch["image"].cuda() if torch.cuda.is_available() else batch["image"])
+        img = batch["image"].to(device)
+        # Prithvi expects (B, C, T, H, W) — add T dim if missing
+        if img.ndim == 4:
+            img = img.unsqueeze(2)  # (B, C, H, W) -> (B, C, 1, H, W)
+        print(f"[{ts()}] Forward input shape: {img.shape}", flush=True)
+        out = model(img)
     if hasattr(out, 'output'):
         print(f"[{ts()}] Forward OK — output: {out.output.shape}", flush=True)
     elif isinstance(out, (list, tuple)):
         print(f"[{ts()}] Forward OK — output: {out[0].shape}", flush=True)
     else:
         print(f"[{ts()}] Forward OK — output: {out.shape}", flush=True)
+    model.cpu()  # move back so Lightning handles placement
     model.train()
 
     # 7. Trainer
