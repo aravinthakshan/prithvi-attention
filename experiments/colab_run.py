@@ -244,9 +244,22 @@ def subset_dataset(ds, pct, seed):
 # ---- Patch embed wrapper ----
 
 def wrap_patch_embed(pe, ca):
+    """Wrap patch_embed to run channel_attn after it, while proxying all
+    attributes (grid_size, num_patches, etc.) from the original patch_embed."""
     class W(nn.Module):
-        def __init__(self): super().__init__(); self.pe = pe; self.ca = ca
-        def forward(self, x, *a, **kw): return self.ca(self.pe(x, *a, **kw))
+        def __init__(self):
+            super().__init__()
+            self.pe = pe
+            self.ca = ca
+        def forward(self, x, *a, **kw):
+            return self.ca(self.pe(x, *a, **kw))
+        def __getattr__(self, name):
+            # First check our own attrs (pe, ca, etc.)
+            try:
+                return super().__getattr__(name)
+            except AttributeError:
+                # Fall through to the original patch_embed for grid_size, num_patches, etc.
+                return getattr(self.pe, name)
     return W()
 
 
