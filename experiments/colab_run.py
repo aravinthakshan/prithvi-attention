@@ -15,8 +15,10 @@ Or in a notebook cell:
 DATASET    = "firescars"      # "firescars"  |  "burnintensity"
 ATTN_TYPE  = "none"           # "none" (baseline)  |  "limix"  |  "mitra"
 DATA_PCT   = 5.0              # % of training data: 5 | 10 | 20 | 50 | 100
-BACKBONE   = "prithvi_eo_v2_300"  # "prithvi_eo_v2_300" | "prithvi_eo_v2_300_tl"
-                              # | "prithvi_eo_v2_600" | "prithvi_eo_v2_600_tl"
+BACKBONE   = "prithvi_eo_v2_300_tl"  # "prithvi_eo_v2_300_tl" | "prithvi_eo_v2_300"
+                               # | "prithvi_eo_v2_600_tl" | "prithvi_eo_v2_600"
+                               # NOTE: non-TL variants don't ship with temporal/location
+                               # embedding weights — use _tl unless you know otherwise
 
 # Set DATA_ROOT to None to auto-download from HuggingFace into OUTPUT_DIR/data/
 # Or set it to an existing folder to skip the download.
@@ -116,6 +118,10 @@ BACKBONE_INDICES = {
     "prithvi_vit_100":      [2,  5,  8, 11],
 }
 
+# Non-TL backbones don't carry temporal/location embedding weights.
+# The _tl suffix variants are the ones distributed with pretrained checkpoints.
+TL_BACKBONES = {"prithvi_eo_v2_300_tl", "prithvi_eo_v2_600_tl"}
+
 DATASET_CFGS = {
     "firescars": dict(
         num_classes=2, num_frames=1, loss="ce", ignore_index=-1,
@@ -204,11 +210,15 @@ def run():
 
     band_enums = [getattr(HLSBands, b) for b in cfg["bands"]]
 
+    # Only TL backbones have temporal/location embedding weights
+    is_tl = BACKBONE.endswith("_tl")
+    coords_enc = cfg["coords_encoding"] if is_tl else []
+
     model_args = dict(
         backbone=BACKBONE,
         backbone_pretrained=True,
         backbone_bands=band_enums,
-        backbone_coords_encoding=cfg["coords_encoding"],
+        backbone_coords_encoding=coords_enc,
         decoder="UperNetDecoder",
         decoder_channels=cfg["decoder_channels"],
         decoder_scale_modules=True,
