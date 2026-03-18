@@ -19,7 +19,7 @@ DATA_ROOT  = None                  # None = auto-download  |  "/your/path" = ski
 OUTPUT_DIR = "./outputs"
 HF_TOKEN   = "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"
 
-MAX_EPOCHS   = 2
+MAX_EPOCHS   = 20
 BATCH_SIZE   = 8
 LR           = 5e-5
 SEED         = 42
