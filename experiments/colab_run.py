@@ -430,5 +430,50 @@ def run():
     return results
 
 
+def run_all():
+    """Run all 3 experiments (baseline, limix, mitra) and print a comparison table."""
+    global ATTN_TYPE
+    all_results = {}
+
+    for attn in ["none", "limix", "mitra"]:
+        ATTN_TYPE = attn
+        print(f"\n{'#'*60}")
+        print(f"#  Running: {attn}")
+        print(f"{'#'*60}\n")
+        try:
+            res = run()
+            metrics = {}
+            for d in res:
+                metrics.update(d)
+            all_results[attn] = metrics
+        except Exception as e:
+            print(f"\n[ERROR] {attn} failed: {e}\n")
+            all_results[attn] = {"error": str(e)}
+
+    # Print comparison table
+    print(f"\n{'='*60}")
+    print(f"  RESULTS COMPARISON — {DATASET} @ {DATA_PCT}% data")
+    print(f"{'='*60}")
+    print(f"{'Attention':<12} {'mIoU':>10} {'Val Loss':>10} {'Attn Params':>12}")
+    print(f"{'-'*46}")
+    for attn in ["none", "limix", "mitra"]:
+        m = all_results.get(attn, {})
+        if "error" in m:
+            print(f"{attn:<12} {'FAILED':>10}")
+            continue
+        iou = m.get("val/Multiclass_Jaccard_Index", 0)
+        loss = m.get("val/loss", 0)
+        # read attn params from results file
+        exp_name = f"{DATASET}__{BACKBONE}__{attn}__pct{int(DATA_PCT)}"
+        rfile = os.path.join(OUTPUT_DIR, exp_name, "results.txt")
+        ap = "0"
+        if os.path.isfile(rfile):
+            for line in open(rfile):
+                if "attn_params" in line:
+                    ap = line.split(":")[1].strip()
+        print(f"{attn:<12} {iou:>10.4f} {loss:>10.4f} {ap:>12}")
+    print(f"{'='*60}\n")
+
+
 if __name__ == "__main__":
-    run()
+    run_all()
