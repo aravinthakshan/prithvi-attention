@@ -14,11 +14,13 @@ Or in a notebook cell:
 
 DATASET    = "firescars"      # "firescars"  |  "burnintensity"
 ATTN_TYPE  = "none"           # "none" (baseline)  |  "limix"  |  "mitra"
-DATA_PCT   = 5.0             # % of training data: 10 | 20 | 50 | 100
+DATA_PCT   = 5.0              # % of training data: 5 | 10 | 20 | 50 | 100
 BACKBONE   = "prithvi_eo_v2_300"  # "prithvi_eo_v2_300" | "prithvi_eo_v2_300_tl"
                               # | "prithvi_eo_v2_600" | "prithvi_eo_v2_600_tl"
 
-DATA_ROOT  = "/path/to/dataset"   # <-- SET THIS (HuggingFace dataset folder)
+# Set DATA_ROOT to None to auto-download from HuggingFace into OUTPUT_DIR/data/
+# Or set it to an existing folder to skip the download.
+DATA_ROOT  = None             # None = auto-download  |  "/your/path" = use existing
 OUTPUT_DIR = "./outputs"
 
 MAX_EPOCHS   = 20
@@ -46,6 +48,52 @@ from lightning.pytorch.loggers import TensorBoardLogger
 # Make sure channel_attention.py is importable
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from channel_attention import build_channel_attention
+
+# ---- HuggingFace dataset IDs ----
+
+HF_DATASET_IDS = {
+    "firescars":     "ibm-nasa-geospatial/hls_burn_scars",
+    "burnintensity": "ibm-nasa-geospatial/burn_intensity",
+}
+
+
+def maybe_download_dataset(dataset: str, data_root: str | None, output_dir: str) -> str:
+    """
+    If data_root is None, download the dataset from HuggingFace into
+    <output_dir>/data/<dataset>/ and return that path.
+    If data_root is already set and the folder exists, skip download and return it.
+    """
+    if data_root is not None and os.path.isdir(data_root):
+        print(f"[data] Using existing dataset at: {data_root}")
+        return data_root
+
+    dest = os.path.join(output_dir, "data", dataset)
+
+    if os.path.isdir(dest) and len(os.listdir(dest)) > 0:
+        print(f"[data] Dataset already downloaded at: {dest}")
+        return dest
+
+    repo_id = HF_DATASET_IDS[dataset]
+    print(f"[data] Downloading '{repo_id}' -> {dest} ...")
+    print("[data] This may take a few minutes depending on your connection.\n")
+
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError:
+        raise ImportError(
+            "huggingface_hub is not installed.\n"
+            "Run:  pip install huggingface_hub"
+        )
+
+    os.makedirs(dest, exist_ok=True)
+    snapshot_download(
+        repo_id=repo_id,
+        repo_type="dataset",
+        local_dir=dest,
+        ignore_patterns=["*.md", "*.gitattributes"],  # skip docs, save time
+    )
+    print(f"[data] Download complete -> {dest}\n")
+    return dest
 
 # ---- constants ----
 
@@ -131,6 +179,9 @@ def run():
     out_dir  = os.path.join(OUTPUT_DIR, exp_name)
     os.makedirs(out_dir, exist_ok=True)
 
+    # Download dataset if needed (skipped if DATA_ROOT already points to a folder)
+    data_root = maybe_download_dataset(DATASET, DATA_ROOT, OUTPUT_DIR)
+
     print(f"\n{'='*60}")
     print(f"  Experiment : {exp_name}")
     print(f"  Attention  : {ATTN_TYPE}")
@@ -205,7 +256,7 @@ def run():
     if DATASET == "firescars":
         from terratorch.datamodules import FireScarsNonGeoDataModule
         dm = FireScarsNonGeoDataModule(
-            data_root=DATA_ROOT,
+            data_root=data_root,
             batch_size=BATCH_SIZE,
             num_workers=NUM_WORKERS,
             no_data_replace=0,
@@ -226,7 +277,7 @@ def run():
             FlattenTemporalIntoChannels, UnflattenTemporalFromChannels
         )
         dm = BurnIntensityNonGeoDataModule(
-            data_root=DATA_ROOT,
+            data_root=data_root,
             batch_size=BATCH_SIZE,
             num_workers=NUM_WORKERS,
             use_metadata=True,
