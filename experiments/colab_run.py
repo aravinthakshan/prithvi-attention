@@ -67,9 +67,15 @@ def maybe_download_dataset(dataset: str, data_root: str | None, output_dir: str)
     <output_dir>/data/<dataset>/ and return that path.
     If data_root is already set and the folder exists, skip download and return it.
     """
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError:
+        raise ImportError("huggingface_hub is not installed. Run: pip install huggingface_hub")
+
     if data_root is not None and os.path.isdir(data_root):
         print(f"[data] Using existing dataset at: {data_root}")
-        return data_root
+        _extract_archives(data_root)
+        return _find_data_root(data_root, dataset)
 
     dest = os.path.join(output_dir, "data", dataset)
 
@@ -79,24 +85,15 @@ def maybe_download_dataset(dataset: str, data_root: str | None, output_dir: str)
         repo_id = HF_DATASET_IDS[dataset]
         print(f"[data] Downloading '{repo_id}' -> {dest} ...")
         print("[data] This may take a few minutes depending on your connection.\n")
-
-        try:
-            from huggingface_hub import snapshot_download
-        except ImportError:
-            raise ImportError(
-                "huggingface_hub is not installed.\n"
-                "Run:  pip install huggingface_hub"
-            )
-
-    os.makedirs(dest, exist_ok=True)
-    snapshot_download(
-        repo_id=repo_id,
-        repo_type="dataset",
-        local_dir=dest,
-        token=HF_TOKEN,
-        ignore_patterns=["*.md", "*.gitattributes"],
-    )
-    print(f"[data] Download complete -> {dest}\n")
+        os.makedirs(dest, exist_ok=True)
+        snapshot_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            local_dir=dest,
+            token=HF_TOKEN,
+            ignore_patterns=["*.md", "*.gitattributes"],
+        )
+        print(f"[data] Download complete -> {dest}\n")
 
     # Extract any tar.gz archives found in the download folder
     _extract_archives(dest)
@@ -106,6 +103,24 @@ def maybe_download_dataset(dataset: str, data_root: str | None, output_dir: str)
     actual = _find_data_root(dest, dataset)
     print(f"[data] Resolved data root: {actual}")
     return actual
+
+
+def _extract_archives(base: str):
+    """Extract any .tar.gz or .tar files found directly inside `base`."""
+    import tarfile
+    for fname in os.listdir(base):
+        fpath = os.path.join(base, fname)
+        if fname.endswith(".tar.gz") or fname.endswith(".tgz") or fname.endswith(".tar"):
+            # Check if already extracted (sentinel: a folder with the same stem exists)
+            stem = fname.replace(".tar.gz", "").replace(".tgz", "").replace(".tar", "")
+            extracted_marker = os.path.join(base, stem)
+            if os.path.isdir(extracted_marker):
+                print(f"[data] Already extracted: {fname}")
+                continue
+            print(f"[data] Extracting {fname} -> {base} ...")
+            with tarfile.open(fpath, "r:*") as tar:
+                tar.extractall(path=base)
+            print(f"[data] Extraction complete.")
 
 
 def _find_data_root(base: str, dataset: str) -> str:
