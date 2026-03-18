@@ -19,7 +19,7 @@ DATA_ROOT  = None                  # None = auto-download  |  "/your/path" = ski
 OUTPUT_DIR = "./outputs"
 HF_TOKEN   = "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"
 
-MAX_EPOCHS   = 20
+MAX_EPOCHS   = 2
 BATCH_SIZE   = 8
 LR           = 5e-5
 SEED         = 42
@@ -503,6 +503,7 @@ if __name__ == "__main__":
     p.add_argument("--epochs", type=int, default=None, help="max epochs (overrides CONFIG BLOCK)")
     p.add_argument("--batch_size", type=int, default=None, help="batch size (overrides CONFIG BLOCK)")
     p.add_argument("--backbone", default=None, help="backbone name (overrides CONFIG BLOCK)")
+    p.add_argument("--attn", default=None, help="Run single attention type: none|limix|mitra|orion (default: run all)")
     args, _ = p.parse_known_args()
 
     if args.dataset:    DATASET = args.dataset
@@ -511,4 +512,8 @@ if __name__ == "__main__":
     if args.batch_size: BATCH_SIZE = args.batch_size
     if args.backbone:   BACKBONE = args.backbone
 
-    run_all()
+    if args.attn:
+        ATTN_TYPE = args.attn
+        run()
+    else:
+        run_all()
