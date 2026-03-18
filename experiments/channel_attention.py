@@ -1,10 +1,11 @@
 """
 Channel-wise attention modules adapted from TabTune for Prithvi EO 2.0.
 
-Three modes:
+Four modes:
   - "none"  : no channel attention, pure Prithvi baseline
   - "limix" : LIMIX-style feature attention (einsum QKV, cross-channel per patch)
   - "mitra" : Mitra/Tab2D-style alternating row+feature attention (separate Q,K,V,O linears)
+  - "orion" : Orion-BIX Bi-Axial attention (4 stacked patterns: standard, grouped, hierarchical, relational)
 
 Architecture:
   Input: (B, N, D) — Prithvi patch tokens after patch_embed
@@ -177,13 +178,132 @@ class MitraChannelAttention(nn.Module):
 
 
 # ---------------------------------------------------------------------------
+# Orion Bi-Axial channel attention
+# Adapted from TabTune/tabtune/models/orion_bix/model/layers.py
+#
+# 4 stacked feature-axis attention patterns from Orion-BIX:
+#   1. Standard cross-feature self-attention
+#   2. Grouped feature attention (split channels into groups, attend within)
+#   3. Hierarchical feature attention (first half <-> second half cross-attend)
+#   4. Relational feature attention (project then self-attend)
+# ---------------------------------------------------------------------------
+
+class _MHABlock(nn.Module):
+    """Minimal MHA + FFN block (Orion-BIX style, pre-norm)."""
+
+    def __init__(self, dim: int, num_heads: int):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(dim)
+        self.attn = nn.MultiheadAttention(dim, num_heads, dropout=0.0, batch_first=True)
+        self.norm2 = nn.LayerNorm(dim)
+        self.ffn = nn.Sequential(
+            nn.Linear(dim, dim * 4), nn.GELU(), nn.Linear(dim * 4, dim)
+        )
+
+    def forward(self, q, k=None, v=None):
+        if k is None:
+            k = q
+        if v is None:
+            v = k
+        # Pre-norm attention
+        q_n, k_n, v_n = self.norm1(q), self.norm1(k), self.norm1(v)
+        out, _ = self.attn(q_n, k_n, v_n)
+        x = q + out
+        # Pre-norm FFN
+        x = x + self.ffn(self.norm2(x))
+        return x
+
+
+class OrionBiAxialChannelAttention(nn.Module):
+    """
+    Orion-BIX Bi-Axial attention applied channel-wise to Prithvi patch tokens.
+
+    Stacks 4 complementary feature attention patterns on the C=6 channel slots:
+      1. Standard: all channels attend to all channels
+      2. Grouped: split into 2 groups of 3, attend within groups
+      3. Hierarchical: first 3 channels <-> last 3 channels cross-attend
+      4. Relational: project then full self-attention
+
+    Project D -> C*slot_dim, apply 4 attention blocks across C, project back.
+    """
+
+    def __init__(self, embed_dim: int, num_channels: int = 6, num_heads: int = 2):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.C = num_channels
+        self.slot_dim = _slot_dim(embed_dim, num_channels, num_heads)
+        self.num_heads = num_heads
+        self.inner_dim = self.C * self.slot_dim
+
+        # Project in/out
+        self.proj_in = nn.Linear(embed_dim, self.inner_dim)
+        self.proj_out = nn.Linear(self.inner_dim, embed_dim)
+        self.norm = nn.LayerNorm(embed_dim)
+
+        # 1. Standard cross-channel self-attention
+        self.standard_attn = _MHABlock(self.slot_dim, num_heads)
+
+        # 2. Grouped channel attention (2 groups of C//2)
+        self.num_groups = min(2, num_channels)
+        self.group_proj = nn.Linear(self.slot_dim, self.slot_dim)
+        self.group_norm = nn.LayerNorm(self.slot_dim)
+        self.grouped_attn = _MHABlock(self.slot_dim, num_heads)
+
+        # 3. Hierarchical: first-half <-> second-half cross-attention
+        self.hier_proj = nn.Linear(self.slot_dim, self.slot_dim)
+        self.hier_norm = nn.LayerNorm(self.slot_dim)
+        self.hier_attn = _MHABlock(self.slot_dim, num_heads)
+
+        # 4. Relational: project then self-attend
+        self.rel_proj = nn.Linear(self.slot_dim, self.slot_dim)
+        self.rel_norm = nn.LayerNorm(self.slot_dim)
+        self.rel_attn = _MHABlock(self.slot_dim, num_heads)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, N, D = x.shape
+        residual = x
+        x = self.norm(x)
+
+        # Project to channel-slot space: (B*N, C, slot_dim)
+        x_ch = self.proj_in(x).view(B * N, self.C, self.slot_dim)
+
+        # 1. Standard cross-channel attention
+        x_ch = self.standard_attn(x_ch)
+
+        # 2. Grouped: split channels into groups, attend within each
+        cpg = self.C // self.num_groups  # channels per group
+        x_g = x_ch[:, :cpg * self.num_groups, :].view(
+            B * N * self.num_groups, cpg, self.slot_dim
+        )
+        x_g = self.grouped_attn(self.group_norm(self.group_proj(x_g)))
+        x_ch[:, :cpg * self.num_groups, :] = x_g.view(B * N, cpg * self.num_groups, self.slot_dim)
+
+        # 3. Hierarchical: first half <-> second half cross-attend
+        mid = self.C // 2
+        first = self.hier_norm(self.hier_proj(x_ch[:, :mid, :]))
+        second = self.hier_norm(self.hier_proj(x_ch[:, mid:, :]))
+        first = self.hier_attn(first, second, second)
+        second = self.hier_attn(second, first, first)
+        x_ch = torch.cat([first, second], dim=1)
+
+        # 4. Relational: project then self-attend
+        x_ch = self.rel_attn(self.rel_norm(self.rel_proj(x_ch)))
+
+        # Project back: (B*N, C, slot_dim) -> (B, N, D)
+        out = x_ch.reshape(B, N, self.inner_dim)
+        out = self.proj_out(out)
+        return residual + out
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
 ATTENTION_REGISTRY = {
-    "none":  NoChannelAttention,
-    "limix": LIMIXChannelAttention,
-    "mitra": MitraChannelAttention,
+    "none":   NoChannelAttention,
+    "limix":  LIMIXChannelAttention,
+    "mitra":  MitraChannelAttention,
+    "orion":  OrionBiAxialChannelAttention,
 }
 
 

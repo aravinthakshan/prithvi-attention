@@ -451,7 +451,7 @@ def run_all():
     global ATTN_TYPE
     all_results = {}
 
-    for attn in ["none", "limix", "mitra"]:
+    for attn in ["none", "limix", "mitra", "orion"]:
         ATTN_TYPE = attn
         print(f"\n{'#'*60}")
         print(f"#  Running: {attn}")
@@ -477,7 +477,7 @@ def run_all():
     print(f"{'='*60}")
     print(f"{'Attention':<12} {'mIoU':>10} {'Val Loss':>10} {'Attn Params':>12}")
     print(f"{'-'*50}")
-    for attn in ["none", "limix", "mitra"]:
+    for attn in ["none", "limix", "mitra", "orion"]:
         m = all_results.get(attn, {})
         if "error" in m:
             print(f"{attn:<12} {'FAILED':>10}   ({m['error'][:40]})")
