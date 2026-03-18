@@ -150,7 +150,12 @@ NUM_SPECTRAL_CHANNELS = 6
 def subset_dataset(dataset, pct, seed):
     from torch.utils.data import Subset
     n = len(dataset)
-    k = max(1, math.ceil(n * pct / 100.0))
+    if n == 0:
+        raise RuntimeError(
+            "Training dataset is empty after dm.setup('fit'). "
+            "Check that DATA_ROOT points to the correct folder and the dataset downloaded correctly."
+        )
+    k = max(1, min(n, math.ceil(n * pct / 100.0)))
     rng = random.Random(seed)
     idx = sorted(rng.sample(range(n), k))
     return Subset(dataset, idx)
@@ -315,10 +320,40 @@ def run():
 
     dm.setup("fit")
 
+    # Debug: show what the datamodule exposes after setup
+    _dm_attrs = {k: type(v).__name__ for k, v in vars(dm).items()
+                 if "dataset" in k.lower() or "ds" in k.lower()}
+    print(f"[debug] datamodule dataset attrs: {_dm_attrs}")
+
     if DATA_PCT < 100.0:
-        orig = dm.train_dataset
-        dm.train_dataset = subset_dataset(orig, DATA_PCT, SEED)
-        print(f"Subset: {len(dm.train_dataset)}/{len(orig)} train samples ({DATA_PCT}%)")
+        # terratorch datamodules may use train_dataset, train_ds, or dataset_train
+        # — detect whichever attribute holds the training set
+        _train_attr = None
+        for _attr in ("train_dataset", "train_ds", "dataset_train"):
+            if hasattr(dm, _attr) and getattr(dm, _attr) is not None:
+                _train_attr = _attr
+                break
+        if _train_attr is None:
+            # last resort: get it directly from train_dataloader
+            orig = dm.train_dataloader().dataset
+            _train_attr = None  # will set via dataloader monkey-patch below
+        else:
+            orig = getattr(dm, _train_attr)
+
+        subset = subset_dataset(orig, DATA_PCT, SEED)
+        print(f"Subset: {len(subset)}/{len(orig)} train samples ({DATA_PCT}%)")
+
+        if _train_attr is not None:
+            setattr(dm, _train_attr, subset)
+        else:
+            # patch train_dataloader to return subset
+            from torch.utils.data import DataLoader
+            dm.train_dataloader = lambda: DataLoader(
+                subset,
+                batch_size=BATCH_SIZE,
+                num_workers=NUM_WORKERS,
+                shuffle=True,
+            )
 
     # 5. Trainer
     logger = TensorBoardLogger(save_dir=out_dir, name="tb")
