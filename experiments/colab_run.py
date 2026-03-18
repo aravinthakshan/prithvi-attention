@@ -374,8 +374,6 @@ def run():
         model=model,
         optimizer="AdamW",
         optimizer_hparams={"weight_decay": 0.05},
-        scheduler="CosineAnnealingLR",
-        scheduler_hparams={"T_max": MAX_EPOCHS},
     )
     if "class_weights" in cfg:
         task_kwargs["class_weights"] = cfg["class_weights"]
@@ -502,9 +500,25 @@ def run():
 
     # 7. Fit
     from datetime import datetime
+    import threading, time
+
     print(f"\nLogs -> {out_dir}")
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Calling trainer.fit — first epoch may take ~30s to compile/load...\n", flush=True)
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Calling trainer.fit...\n", flush=True)
+
+    # Watchdog: print a heartbeat every 15s so we know it's alive
+    _stop = threading.Event()
+    def _heartbeat():
+        t = 0
+        while not _stop.is_set():
+            time.sleep(15)
+            t += 15
+            if not _stop.is_set():
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] ... still running ({t}s elapsed, waiting for first epoch)", flush=True)
+    _watcher = threading.Thread(target=_heartbeat, daemon=True)
+    _watcher.start()
+
     trainer.fit(task, datamodule=dm)
+    _stop.set()
 
     # 8. Final metrics
     print("\n[Final Validation Metrics]")
