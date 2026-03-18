@@ -372,7 +372,7 @@ def run():
         freeze_backbone=FREEZE_BACKBONE,
         freeze_decoder=False,
         model=model,
-        optimizer="adamw",
+        optimizer="AdamW",
         optimizer_hparams={"lr": lr, "weight_decay": 0.05},
         scheduler="CosineAnnealingLR",
         scheduler_hparams={"T_max": MAX_EPOCHS},
