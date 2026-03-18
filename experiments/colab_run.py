@@ -496,4 +496,19 @@ def run_all():
 
 
 if __name__ == "__main__":
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--dataset", default=None, help="firescars | burnintensity (overrides CONFIG BLOCK)")
+    p.add_argument("--data_pct", type=float, default=None, help="% of training data (overrides CONFIG BLOCK)")
+    p.add_argument("--epochs", type=int, default=None, help="max epochs (overrides CONFIG BLOCK)")
+    p.add_argument("--batch_size", type=int, default=None, help="batch size (overrides CONFIG BLOCK)")
+    p.add_argument("--backbone", default=None, help="backbone name (overrides CONFIG BLOCK)")
+    args, _ = p.parse_known_args()
+
+    if args.dataset:    DATASET = args.dataset
+    if args.data_pct:   DATA_PCT = args.data_pct
+    if args.epochs:     MAX_EPOCHS = args.epochs
+    if args.batch_size: BATCH_SIZE = args.batch_size
+    if args.backbone:   BACKBONE = args.backbone
+
     run_all()
