@@ -39,11 +39,16 @@ FREEZE_BACKBONE = False       # True = only train attn + decoder
 #  END CONFIG BLOCK — do not edit below unless you know why
 # ============================================================
 
-import os, sys, random, math
+import os, sys, random, math, logging
 import numpy as np
 import torch
 import torch.nn as nn
 import lightning.pytorch as pl
+
+# suppress Lightning's verbose INFO logs — only show warnings and errors
+logging.getLogger("lightning.pytorch").setLevel(logging.WARNING)
+logging.getLogger("lightning.fabric").setLevel(logging.WARNING)
+logging.getLogger("terratorch").setLevel(logging.WARNING)
 from lightning.pytorch.callbacks import (
     EarlyStopping, LearningRateMonitor, ModelCheckpoint,
 )
@@ -106,21 +111,30 @@ def maybe_download_dataset(dataset: str, data_root: str | None, output_dir: str)
 
 
 def _extract_archives(base: str):
-    """Extract any .tar.gz or .tar files found directly inside `base`."""
+    """Extract any .tar.gz or .tar files found directly inside `base`.
+    Skips extraction if data subdirectories (training/ or validation/) already exist."""
     import tarfile
-    for fname in os.listdir(base):
+
+    # If the expected split folders already exist, nothing to do
+    already_extracted = any(
+        os.path.isdir(os.path.join(base, d))
+        for d in ("training", "validation", "train", "val")
+    )
+    if already_extracted:
+        return
+
+    for fname in sorted(os.listdir(base)):
+        if not (fname.endswith(".tar.gz") or fname.endswith(".tgz") or fname.endswith(".tar")):
+            continue
         fpath = os.path.join(base, fname)
-        if fname.endswith(".tar.gz") or fname.endswith(".tgz") or fname.endswith(".tar"):
-            # Check if already extracted (sentinel: a folder with the same stem exists)
-            stem = fname.replace(".tar.gz", "").replace(".tgz", "").replace(".tar", "")
-            extracted_marker = os.path.join(base, stem)
-            if os.path.isdir(extracted_marker):
-                print(f"[data] Already extracted: {fname}")
-                continue
-            print(f"[data] Extracting {fname} -> {base} ...")
-            with tarfile.open(fpath, "r:*") as tar:
-                tar.extractall(path=base)
-            print(f"[data] Extraction complete.")
+        print(f"[data] Extracting {fname} ...", flush=True)
+        with tarfile.open(fpath, "r:*") as tar:
+            tar.extractall(path=base, filter="data")
+        print(f"[data] Extraction complete.", flush=True)
+        # Re-check: if split folders now exist, stop (one archive was enough)
+        if any(os.path.isdir(os.path.join(base, d))
+               for d in ("training", "validation", "train", "val")):
+            break
 
 
 def _find_data_root(base: str, dataset: str) -> str:
@@ -216,14 +230,36 @@ def wrap_patch_embed(patch_embed, channel_attn):
 
 
 class MetricsPrinter(pl.Callback):
+    def __init__(self):
+        super().__init__()
+        self._epoch_start = None
+
+    def on_train_start(self, trainer, pl_module):
+        from datetime import datetime
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Training started.", flush=True)
+
     def on_train_epoch_start(self, trainer, pl_module):
-        print(f"[epoch {trainer.current_epoch + 1}/{trainer.max_epochs}] training...", flush=True)
+        import time
+        from datetime import datetime
+        self._epoch_start = time.time()
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] epoch {trainer.current_epoch + 1}/{trainer.max_epochs} — training...", flush=True)
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        import time
+        from datetime import datetime
+        elapsed = time.time() - self._epoch_start if self._epoch_start else 0
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] epoch {trainer.current_epoch + 1}/{trainer.max_epochs} — train done ({elapsed:.1f}s)", flush=True)
 
     def on_validation_epoch_end(self, trainer, pl_module):
+        from datetime import datetime
         m = {k: f"{v:.4f}" for k, v in trainer.callback_metrics.items()
              if not k.startswith("train/")}
-        print(f"[epoch {trainer.current_epoch + 1}/{trainer.max_epochs}] " +
-              "  |  ".join(f"{k}={v}" for k, v in sorted(m.items())), flush=True)
+        metrics_str = "  |  ".join(f"{k}={v}" for k, v in sorted(m.items()))
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] epoch {trainer.current_epoch + 1}/{trainer.max_epochs} — {metrics_str}", flush=True)
+
+    def on_train_end(self, trainer, pl_module):
+        from datetime import datetime
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Training complete.", flush=True)
 
 
 # ---- main ----
@@ -424,8 +460,9 @@ def run():
         log_every_n_steps=5,
         check_val_every_n_epoch=2,
         default_root_dir=out_dir,
-        enable_progress_bar=False,   # no progress bar
-        enable_model_summary=False,  # no model summary table
+        enable_progress_bar=False,
+        enable_model_summary=False,
+        num_sanity_val_steps=0,      # skip silent sanity check at start
     )
 
     # 6. Optimizer — patch task after construction
@@ -441,7 +478,9 @@ def run():
     task.configure_optimizers = types.MethodType(configure_optimizers, task)
 
     # 7. Fit
-    print(f"\nLogs -> {out_dir}\n")
+    from datetime import datetime
+    print(f"\nLogs -> {out_dir}")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Calling trainer.fit — first epoch may take ~30s to compile/load...\n", flush=True)
     trainer.fit(task, datamodule=dm)
 
     # 8. Final metrics
