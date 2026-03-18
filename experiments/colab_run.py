@@ -23,6 +23,8 @@ BACKBONE   = "prithvi_eo_v2_300"  # "prithvi_eo_v2_300" | "prithvi_eo_v2_300_tl"
 DATA_ROOT  = None             # None = auto-download  |  "/your/path" = use existing
 OUTPUT_DIR = "./outputs"
 
+HF_TOKEN   = "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"
+
 MAX_EPOCHS   = 20
 BATCH_SIZE   = 8
 LR           = 5e-5
@@ -90,6 +92,7 @@ def maybe_download_dataset(dataset: str, data_root: str | None, output_dir: str)
         repo_id=repo_id,
         repo_type="dataset",
         local_dir=dest,
+        token=HF_TOKEN,
         ignore_patterns=["*.md", "*.gitattributes"],  # skip docs, save time
     )
     print(f"[data] Download complete -> {dest}\n")
