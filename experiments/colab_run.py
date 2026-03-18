@@ -202,10 +202,12 @@ def make_datamodule(dataset, data_root, batch_size):
     import albumentations as A
     from albumentations.pytorch import ToTensorV2
 
+    nw = 2  # Colab-safe; set to 4 on Kaggle/local
+
     if dataset == "firescars":
         from terratorch.datamodules import FireScarsNonGeoDataModule
         return FireScarsNonGeoDataModule(
-            data_root=data_root, batch_size=batch_size, num_workers=0,
+            data_root=data_root, batch_size=batch_size, num_workers=nw,
             no_data_replace=0, no_label_replace=-1, use_metadata=True,
             train_transform=A.Compose([A.Resize(224,224), A.HorizontalFlip(p=0.5),
                                        A.VerticalFlip(p=0.5), ToTensorV2()]),
@@ -216,7 +218,7 @@ def make_datamodule(dataset, data_root, batch_size):
         from terratorch.datamodules import BurnIntensityNonGeoDataModule
         from terratorch.transforms import FlattenTemporalIntoChannels, UnflattenTemporalFromChannels
         return BurnIntensityNonGeoDataModule(
-            data_root=data_root, batch_size=batch_size, num_workers=0,
+            data_root=data_root, batch_size=batch_size, num_workers=nw,
             use_metadata=True, use_full_data=True,
             train_transform=A.Compose([FlattenTemporalIntoChannels(), A.Flip(), ToTensorV2(),
                                        UnflattenTemporalFromChannels(n_timesteps=3)]),
@@ -402,7 +404,10 @@ def run():
 
     # 8. Train
     print(f"\n[{ts()}] Starting training...\n", flush=True)
+    t_start = time.time()
     trainer.fit(lit, datamodule=dm)
+    t_total = time.time() - t_start
+    print(f"[{ts()}] Training finished in {t_total:.0f}s ({t_total/60:.1f} min)", flush=True)
 
     # 9. Final metrics
     print(f"\n[{ts()}] Final validation...", flush=True)
