@@ -75,30 +75,55 @@ def maybe_download_dataset(dataset: str, data_root: str | None, output_dir: str)
 
     if os.path.isdir(dest) and len(os.listdir(dest)) > 0:
         print(f"[data] Dataset already downloaded at: {dest}")
-        return dest
+    else:
+        repo_id = HF_DATASET_IDS[dataset]
+        print(f"[data] Downloading '{repo_id}' -> {dest} ...")
+        print("[data] This may take a few minutes depending on your connection.\n")
 
-    repo_id = HF_DATASET_IDS[dataset]
-    print(f"[data] Downloading '{repo_id}' -> {dest} ...")
-    print("[data] This may take a few minutes depending on your connection.\n")
+        try:
+            from huggingface_hub import snapshot_download
+        except ImportError:
+            raise ImportError(
+                "huggingface_hub is not installed.\n"
+                "Run:  pip install huggingface_hub"
+            )
 
-    try:
-        from huggingface_hub import snapshot_download
-    except ImportError:
-        raise ImportError(
-            "huggingface_hub is not installed.\n"
-            "Run:  pip install huggingface_hub"
+        os.makedirs(dest, exist_ok=True)
+        snapshot_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            local_dir=dest,
+            token=HF_TOKEN,
+            ignore_patterns=["*.md", "*.gitattributes"],
         )
+        print(f"[data] Download complete -> {dest}\n")
 
-    os.makedirs(dest, exist_ok=True)
-    snapshot_download(
-        repo_id=repo_id,
-        repo_type="dataset",
-        local_dir=dest,
-        token=HF_TOKEN,
-        ignore_patterns=["*.md", "*.gitattributes"],  # skip docs, save time
-    )
-    print(f"[data] Download complete -> {dest}\n")
-    return dest
+    # HuggingFace sometimes nests files one level deeper — find the actual data root
+    # by looking for a folder that contains .tif files
+    actual = _find_data_root(dest, dataset)
+    print(f"[data] Resolved data root: {actual}")
+    return actual
+
+
+def _find_data_root(base: str, dataset: str) -> str:
+    """
+    Walk up to 3 levels under `base` to find the folder that contains
+    the expected split subfolders (training/, validation/) or .tif files.
+    Falls back to `base` if nothing better is found.
+    """
+    # Expected subfolder names used by terratorch datamodules
+    SPLIT_MARKERS = {"training", "validation", "train", "val", "test"}
+
+    for root, dirs, files in os.walk(base):
+        depth = root[len(base):].count(os.sep)
+        if depth > 3:
+            break
+        subdirs = {d.lower() for d in dirs}
+        has_tifs = any(f.endswith(".tif") or f.endswith(".tiff") for f in files)
+        if subdirs & SPLIT_MARKERS or has_tifs:
+            return root
+
+    return base
 
 # ---- constants ----
 
@@ -324,6 +349,9 @@ def run():
     _dm_attrs = {k: type(v).__name__ for k, v in vars(dm).items()
                  if "dataset" in k.lower() or "ds" in k.lower()}
     print(f"[debug] datamodule dataset attrs: {_dm_attrs}")
+    print(f"[debug] train_dataset length: {len(dm.train_dataset)}")
+    print(f"[debug] data_root used: {data_root}")
+    print(f"[debug] files in data_root: {os.listdir(data_root)[:10]}")
 
     if DATA_PCT < 100.0:
         # terratorch datamodules may use train_dataset, train_ds, or dataset_train
