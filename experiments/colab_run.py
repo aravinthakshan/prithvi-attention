@@ -39,6 +39,9 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import importlib
+import channel_attention as _ca_mod
+importlib.reload(_ca_mod)
 from channel_attention import build_channel_attention
 
 logging.getLogger("lightning").setLevel(logging.WARNING)
