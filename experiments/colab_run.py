@@ -435,7 +435,7 @@ def run_all():
     global ATTN_TYPE
     all_results = {}
 
-    for attn in ["none", "limix", "mitra"]:
+    for attn in ["limix", "mitra"]:
         ATTN_TYPE = attn
         print(f"\n{'#'*60}")
         print(f"#  Running: {attn}")
