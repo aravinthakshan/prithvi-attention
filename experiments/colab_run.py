@@ -12,14 +12,14 @@ Colab / Kaggle runner — edit the CONFIG BLOCK below and run this file.
 
 DATASET    = "firescars"           # "firescars"  |  "burnintensity"
 ATTN_TYPE  = "none"                # "none" (baseline)  |  "limix"  |  "mitra"
-DATA_PCT   = 5.0                   # % of training data: 5 | 10 | 20 | 50 | 100
+DATA_PCT   = 100.0                 # % of training data: 5 | 10 | 20 | 50 | 100
 BACKBONE   = "prithvi_eo_v2_300_tl"
 
 DATA_ROOT  = None                  # None = auto-download  |  "/your/path" = skip download
 OUTPUT_DIR = "./outputs"
 HF_TOKEN   = "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"
 
-MAX_EPOCHS   = 5
+MAX_EPOCHS   = 2
 BATCH_SIZE   = 8
 LR           = 5e-5
 SEED         = 42
@@ -411,7 +411,7 @@ def run():
         ],
         logger=TensorBoardLogger(save_dir=out_dir, name="tb"),
         log_every_n_steps=5,
-        check_val_every_n_epoch=2,
+        check_val_every_n_epoch=1,
         default_root_dir=out_dir,
         enable_progress_bar=False,
         enable_model_summary=False,
