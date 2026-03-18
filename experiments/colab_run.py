@@ -148,10 +148,12 @@ class LitPrithviSeg(pl.LightningModule):
 
     def _step(self, batch, phase):
         img = batch["image"]  # (B, C, T, H, W) or (B, C, H, W)
-        mask = batch["mask"]  # (B, H, W)
+        mask = batch["mask"]  # (B, H, W) or (B, 1, H, W)
 
         if img.ndim == 4:
             img = img.unsqueeze(2)  # (B, C, H, W) -> (B, C, 1, H, W)
+        if mask.ndim == 4:
+            mask = mask.squeeze(1)  # (B, 1, H, W) -> (B, H, W)
 
         out = self.model(img)  # terratorch model output
         # terratorch models return a ModelOutput with .output
