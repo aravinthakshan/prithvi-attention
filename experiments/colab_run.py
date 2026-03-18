@@ -88,15 +88,18 @@ def maybe_download_dataset(dataset: str, data_root: str | None, output_dir: str)
                 "Run:  pip install huggingface_hub"
             )
 
-        os.makedirs(dest, exist_ok=True)
-        snapshot_download(
-            repo_id=repo_id,
-            repo_type="dataset",
-            local_dir=dest,
-            token=HF_TOKEN,
-            ignore_patterns=["*.md", "*.gitattributes"],
-        )
-        print(f"[data] Download complete -> {dest}\n")
+    os.makedirs(dest, exist_ok=True)
+    snapshot_download(
+        repo_id=repo_id,
+        repo_type="dataset",
+        local_dir=dest,
+        token=HF_TOKEN,
+        ignore_patterns=["*.md", "*.gitattributes"],
+    )
+    print(f"[data] Download complete -> {dest}\n")
+
+    # Extract any tar.gz archives found in the download folder
+    _extract_archives(dest)
 
     # HuggingFace sometimes nests files one level deeper — find the actual data root
     # by looking for a folder that contains .tif files
