@@ -17,7 +17,7 @@ BACKBONE   = "prithvi_eo_v2_300_tl"
 
 DATA_ROOT  = None                  # None = auto-download  |  "/your/path" = skip download
 OUTPUT_DIR = "./outputs"
-HF_TOKEN   = "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"
+HF_TOKEN   = "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"
 
 MAX_EPOCHS   = 2
 BATCH_SIZE   = 8
