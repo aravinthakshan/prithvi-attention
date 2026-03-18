@@ -1,0 +1,53 @@
+# ============================================================
+# Experiment config: Fire Scars (T=1, binary segmentation)
+# Dataset: https://huggingface.co/datasets/ibm-nasa-geospatial/hls_burn_scars
+#
+# QUICK KNOBS — change these to switch experiments:
+#   data_pct  : percentage of training data  (try 10, 20, 50, 100)
+#   attn_type : none | limix | mitra
+#   backbone  : prithvi_eo_v2_300 | prithvi_eo_v2_300_tl
+# ============================================================
+
+experiment:
+  name: firescars_channel_attn
+  dataset: firescars
+  attn_type: none          # <-- CHANGE: none | limix | mitra
+  data_pct: 20             # <-- CHANGE: 10 | 20 | 50 | 100
+  seed: 42
+
+paths:
+  data_root: /path/to/hls_burn_scars    # <-- SET THIS
+  output_dir: ./outputs
+
+backbone:
+  name: prithvi_eo_v2_300               # <-- CHANGE: prithvi_eo_v2_300 | prithvi_eo_v2_300_tl
+  pretrained: true
+  freeze: false
+  coords_encoding:
+    - time
+    - location
+  neck_indices: [5, 11, 17, 23]         # for 300M; use [7,15,23,31] for 600M
+
+channel_attention:
+  num_heads: 2                          # heads inside the channel attn module
+
+model:
+  num_classes: 2
+  decoder: UperNetDecoder
+  decoder_channels: 256
+  head_dropout: 0.1
+  loss: ce
+  ignore_index: -1
+
+training:
+  max_epochs: 20
+  batch_size: 8
+  num_workers: 2
+  lr: 5.0e-5
+  weight_decay: 0.05
+  early_stopping_patience: 8
+  check_val_every_n_epoch: 2
+
+# Bands (do not change — HLS 6-band standard)
+bands: [BLUE, GREEN, RED, NIR_BROAD, SWIR_1, SWIR_2]
+num_frames: 1

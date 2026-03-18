@@ -1,0 +1,55 @@
+# ============================================================
+# Experiment config: Burn Intensity (T=3, 5-class segmentation)
+# Dataset: https://huggingface.co/datasets/ibm-nasa-geospatial/burn_intensity
+#
+# QUICK KNOBS — change these to switch experiments:
+#   data_pct  : percentage of training data  (try 10, 20, 50, 100)
+#   attn_type : none | limix | mitra
+#   backbone  : prithvi_eo_v2_300 | prithvi_eo_v2_300_tl
+# ============================================================
+
+experiment:
+  name: burnintensity_channel_attn
+  dataset: burnintensity
+  attn_type: none          # <-- CHANGE: none | limix | mitra
+  data_pct: 20             # <-- CHANGE: 10 | 20 | 50 | 100
+  seed: 42
+
+paths:
+  data_root: /path/to/burn_intensity    # <-- SET THIS
+  output_dir: ./outputs
+
+backbone:
+  name: prithvi_eo_v2_300               # <-- CHANGE: prithvi_eo_v2_300 | prithvi_eo_v2_300_tl
+  pretrained: true
+  freeze: false
+  coords_encoding:
+    - location
+  neck_indices: [5, 11, 17, 23]         # for 300M; use [7,15,23,31] for 600M
+
+channel_attention:
+  num_heads: 2
+
+model:
+  num_classes: 5
+  num_frames: 3
+  decoder: UperNetDecoder
+  decoder_channels: 512
+  head_dropout: 0.1
+  loss: ce
+  ignore_index: -1
+  class_names: [No burn, Unburned to Very Low, Low Severity, Moderate Severity, High Severity]
+  class_weights: [0.018, 0.14, 0.076, 0.11, 0.65]
+
+training:
+  max_epochs: 20
+  batch_size: 8
+  num_workers: 2
+  lr: 1.0e-5
+  weight_decay: 0.1
+  early_stopping_patience: 8
+  check_val_every_n_epoch: 2
+
+# Bands (do not change)
+bands: [BLUE, GREEN, RED, NIR, SWIR_1, SWIR_2]
+num_frames: 3
