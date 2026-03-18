@@ -150,7 +150,10 @@ class LitPrithviSeg(pl.LightningModule):
         img = batch["image"]  # (B, C, T, H, W) or (B, C, H, W)
         mask = batch["mask"]  # (B, H, W)
 
-        out = self.model(img)  # list of outputs from terratorch model
+        if img.ndim == 4:
+            img = img.unsqueeze(2)  # (B, C, H, W) -> (B, C, 1, H, W)
+
+        out = self.model(img)  # terratorch model output
         # terratorch models return a ModelOutput with .output
         if hasattr(out, 'output'):
             logits = out.output
