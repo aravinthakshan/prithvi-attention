@@ -363,13 +363,7 @@ def run():
 
     dm.setup("fit")
 
-    # Debug: show what the datamodule exposes after setup
-    _dm_attrs = {k: type(v).__name__ for k, v in vars(dm).items()
-                 if "dataset" in k.lower() or "ds" in k.lower()}
-    print(f"[debug] datamodule dataset attrs: {_dm_attrs}")
-    print(f"[debug] train_dataset length: {len(dm.train_dataset)}")
-    print(f"[debug] data_root used: {data_root}")
-    print(f"[debug] files in data_root: {os.listdir(data_root)[:10]}")
+    print(f"[data] Train samples available: {len(dm.train_dataset)}")
 
     if DATA_PCT < 100.0:
         # terratorch datamodules may use train_dataset, train_ds, or dataset_train
